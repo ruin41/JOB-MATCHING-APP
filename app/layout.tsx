@@ -5,7 +5,7 @@ import "./globals.css"
 
 const inter = Inter({ subsets: ["latin"] })
 
-export const metadata: Metadata = {
+export const metaData: Metadata = {
   title: "JobMatch - あなたに合った企業と、スワイプで出会おう",
   description:
     "直感的なスワイプUIで、理想の転職先を見つけよう。企業と求職者が簡単・スピーディに相互理解できる新しい転職体験。",
