@@ -116,6 +116,10 @@ export default function RoleSelectionPage() {
 
       console.log("ロール更新成功:", data.user?.user_metadata)
 
+      // セッションを強制的に更新して、メタデータの変更を即時反映
+      await supabase.auth.refreshSession()
+      console.log("セッションを更新しました")
+
       // public_usersテーブルにもユーザー情報を保存
       const { error: insertError } = await supabase.from("public_users").upsert({
         id: user.id,
@@ -126,10 +130,6 @@ export default function RoleSelectionPage() {
         console.error("Public users insert error:", insertError)
         // エラーがあってもプロフィール画面に進む
       }
-
-      // セッション保存を確実にするため少し待機
-      console.log("セッション保存確認中...")
-      await new Promise((resolve) => setTimeout(resolve, 500))
 
       // ロールに応じたプロフィール登録画面に遷移
       const profilePath = role === "company" ? "/signup/company-profile" : "/signup/jobseeker-profile"
