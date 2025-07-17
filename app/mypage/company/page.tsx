@@ -199,6 +199,13 @@ export default function CompanyMyPage() {
     return null // リダイレクト中
   }
 
+  if (currentUser.userType !== "company") {
+    if (typeof window !== "undefined") {
+      window.location.href = "/login" // または "/mypage/jobseeker" などに誘導
+    }
+    return null
+  }
+
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">

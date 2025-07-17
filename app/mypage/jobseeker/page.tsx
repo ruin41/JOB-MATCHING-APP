@@ -107,6 +107,13 @@ export default function JobseekerMyPage() {
     return null // リダイレクト中
   }
 
+  if (currentUser.userType !== "jobseeker") {
+    if (typeof window !== "undefined") {
+      window.location.href = "/login" // 不正なロールはログインへ戻す
+    }
+    return null
+  }
+
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
