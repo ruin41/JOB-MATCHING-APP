@@ -4,53 +4,70 @@ import { useState, useEffect } from "react"
 import { ChatSidebar } from "@/components/chat/ChatSidebar"
 import { ChatWindow } from "@/components/chat/ChatWindow"
 import { ChatHeader } from "@/components/chat/ChatHeader"
-import { type ChatConversation, generateDummyData, generateCompanyDummyData } from "@/lib/chat-dummy-data"
+import { getSendbirdClient } from "@/lib/sendbird-client"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useAuthGuard } from "@/hooks/useAuthGuard"
 import { Button } from "@/components/ui/button"
 import { MessageSquare, ArrowLeft } from "lucide-react"
+import { type ChatConversation } from "@/lib/chat-dummy-data"
+import { getMatchedConversations } from "@/lib/supabaseChat"
+import { fetchMessages } from "@/lib/sendbird-chat" 
+import { sendMessageToChannel } from "@/lib/sendbird-chat"
 
 export default function ChatPage() {
   const { isLoading, isAuthenticated } = useAuthGuard()
   const [userType, setUserType] = useState<"jobseeker" | "company">("jobseeker")
-  const [conversations, setConversations] = useState<ChatConversation[]>([])
-  const [selectedConversation, setSelectedConversation] = useState<ChatConversation | null>(null)
   const [showSidebar, setShowSidebar] = useState(true)
   const [isInitialized, setIsInitialized] = useState(false)
   const isMobile = useMediaQuery("(max-width: 768px)")
+  const [conversations, setConversations] = useState<ChatConversation[]>([])
+  const [selectedConversation, setSelectedConversation] = useState<ChatConversation | null>(null)
 
   // ユーザータイプの判定とデータ初期化
   useEffect(() => {
-    if (typeof window !== "undefined" && !isInitialized) {
-      try {
-        // URLパラメータからユーザータイプを取得
-        const params = new URLSearchParams(window.location.search)
-        const type = params.get("type")
-        const currentUserType = type === "company" ? "company" : "jobseeker"
-        setUserType(currentUserType)
+    const fetchSendbirdConversations = async () => {
+      const userId = localStorage.getItem("sb_user_id")
+      if (!userId) return
+  
+      const sb = await getSendbirdClient(userId)
+  
+      // 1. Supabaseからchannel_url一覧を取得
+      const matched = await getMatchedConversations(userId)
+  
+      const channels = await Promise.all(
+        matched.map(async (conv) => {
+          try {
+            const ch = await sb.groupChannel.getChannel(conv.channel_url)
+      
+            const otherUser = ch.members.find((m) => m.userId !== userId)
+            if (!otherUser) return null
+      
+            const messages = await fetchMessages(ch.url, userId) // ← ここで履歴を取得！
 
-        // ダミーデータの読み込み
-        const data = currentUserType === "jobseeker" ? generateDummyData() : generateCompanyDummyData()
-        setConversations(data)
-
-        // 最初の会話を選択
-        if (data.length > 0) {
-          setSelectedConversation(data[0])
-        }
-
-        setIsInitialized(true)
-      } catch (error) {
-        console.error("チャット画面初期化エラー:", error)
-        // エラーが発生してもデフォルト値で初期化
-        const data = generateDummyData()
-        setConversations(data)
-        if (data.length > 0) {
-          setSelectedConversation(data[0])
-        }
-        setIsInitialized(true)
-      }
+            return {
+              id: ch.url,
+              user: {
+                id: otherUser.userId,
+                name: otherUser.nickname || "相手",
+                avatarUrl: otherUser.profileUrl || "",
+                isOnline: otherUser.isOnline,
+              },
+              messages , // 必要に応じて fetch 可能
+            }
+          } catch (err) {
+            console.error("チャンネル取得失敗:", conv.channel_url)
+            return null
+          }
+        })
+      )
+  
+      const filtered = channels.filter(Boolean) as ChatConversation[]
+      setConversations(filtered)
+      if (filtered.length > 0) setSelectedConversation(filtered[0])
     }
-  }, [isInitialized])
+  
+    fetchSendbirdConversations()
+  }, [])
 
   // モバイル表示の場合、サイドバーを非表示に
   useEffect(() => {
@@ -87,24 +104,24 @@ export default function ChatPage() {
   }
 
   // メッセージを送信
-  const handleSendMessage = (content: string) => {
+  const handleSendMessage = async (content: string) => {
     if (!selectedConversation || !content.trim()) return
-
-    const newMessage = {
-      id: `msg-new-${Date.now()}`,
-      senderId: "current-user",
-      content,
-      timestamp: new Date(),
-      read: true,
-    }
-
+  
+    const userId = localStorage.getItem("sb_user_id")
+    if (!userId) return
+  
+    const newMessage = await sendMessageToChannel(selectedConversation.id, content, userId)
+    if (!newMessage) return
+  
     const updatedConversation = {
       ...selectedConversation,
       messages: [...selectedConversation.messages, newMessage],
     }
-
+  
     setSelectedConversation(updatedConversation)
-    setConversations(conversations.map((conv) => (conv.id === updatedConversation.id ? updatedConversation : conv)))
+    setConversations(
+      conversations.map((conv) => (conv.id === updatedConversation.id ? updatedConversation : conv))
+    )
   }
 
   // サイドバー表示切り替え
