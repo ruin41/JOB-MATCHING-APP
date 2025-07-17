@@ -109,63 +109,60 @@ export default function CompanyProfilePage() {
   useEffect(() => {
     const checkUserSession = async () => {
       console.log("=== 企業プロフィール画面: セッション確認開始 ===")
+      let attempts = 0
+      const maxAttempts = 5
+      const delay = (ms: number) => new Promise((res) => setTimeout(res, ms))
 
-      try {
-        // Supabaseセッション確認
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession()
+      while (attempts < maxAttempts) {
+        try {
+          const {
+            data: { session },
+            error: sessionError,
+          } = await supabase.auth.getSession()
 
-        console.log("Supabaseセッション確認結果:", { session: !!session, error: sessionError })
+          console.log(`[試行 ${attempts + 1}/${maxAttempts}] Supabaseセッション確認結果:`, {
+            session: !!session,
+            error: sessionError,
+          })
 
-        if (sessionError) {
-          console.error("セッション取得エラー:", sessionError)
-          setError("セッションの取得に失敗しました")
-          setIsCheckingAuth(false)
-          return
-        }
+          if (sessionError) {
+            throw new Error(`セッション取得エラー: ${sessionError.message}`)
+          }
 
-        if (session?.user) {
-          console.log("Supabaseセッション有効:", session.user.id, session.user.user_metadata?.user_type)
-          setCurrentUser(session.user)
+          if (session?.user) {
+            console.log("Supabaseセッション有効:", session.user.id, session.user.user_metadata?.user_type)
+            setCurrentUser(session.user)
 
-          // ユーザータイプが企業かチェック
-          const userType = session.user.user_metadata?.user_type
-          if (userType && userType !== "company") {
-            console.log("ユーザータイプが企業ではありません:", userType)
-            setError("企業アカウントでログインしてください")
+            const userType = session.user.user_metadata?.user_type
+            if (userType && userType !== "company") {
+              setError("企業アカウントでログインしてください")
+              setIsCheckingAuth(false)
+              return
+            }
+
+            console.log("Cookieにセッション情報を同期中...")
+            await syncSessionToCookies(session)
             setIsCheckingAuth(false)
-            return
+            return // 正常に処理完了
           }
-
-          // SupabaseセッションをサーバーサイドのCookieに同期
-          console.log("Cookieにセッション情報を同期中...")
-          const syncResult = await syncSessionToCookies(session)
-
-          if (syncResult.success) {
-            console.log("Cookie同期成功")
-          } else {
-            console.error("Cookie同期失敗:", syncResult.error)
-          }
-
-          setIsCheckingAuth(false)
-        } else {
-          console.log("Supabaseセッションなし")
-          setError("ログインが必要です。ロール選択画面にリダイレクトします。")
-
-          // ロール選択画面にリダイレクト
-          setTimeout(() => {
-            router.push("/signup/role")
-          }, 3000)
-
-          setIsCheckingAuth(false)
+        } catch (error) {
+          console.error(`[試行 ${attempts + 1}] セッション確認エラー:`, error)
         }
-      } catch (error) {
-        console.error("セッション確認エラー:", error)
-        setError("認証状態の確認に失敗しました")
-        setIsCheckingAuth(false)
+
+        attempts++
+        if (attempts < maxAttempts) {
+          console.log(`${attempts * 300}ms 待機して再試行します...`)
+          await delay(attempts * 300) // 待機時間を少しずつ増やす
+        }
       }
+
+      // リトライしてもセッションが取得できなかった場合
+      console.log("Supabaseセッションなし（リトライ上限到達）")
+      setError("ログインが必要です。ロール選択画面にリダイレクトします。")
+      setTimeout(() => {
+        router.push("/signup/role")
+      }, 3000)
+      setIsCheckingAuth(false)
     }
 
     checkUserSession()
